@@ -1,9 +1,12 @@
+import bson.timestamp
 import typer
+from datetime import datetime
 from colorama import Fore
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
 from tabulate import tabulate
+import bson
 import os
 
 load_dotenv()
@@ -13,30 +16,99 @@ app = typer.Typer()
 @app.command()
 def addtodo():
     while(True):    
-        title = input("Enter title: ")
-        description = input("Enter description: ")
-        priority = input(f"What is prioriy {Fore.RED}(options: 1,2,3,4 or Enter to skip){Fore.RESET}: ")
-        due_date = input(f"Due date {Fore.RED}(eg. DD/MM/YYYY hh:mm or Enter to skip){Fore.RESET}: ")
+        title = input(f"{Fore.RED}*{Fore.RESET}Enter title: ")
         
-        # print("\n")
+        if(title == ""):
+            print(f"{Fore.RED}Please enter title{Fore.RESET}")
+            continue
+        
+        description = input("Enter description: ")
+        priority = input(f"What is prioriy {Fore.RED}(options: 1,2,3,4){Fore.RESET}: ")
+                
+        if priority not in [1,2,3,4]:
+            priority = None
+        else:
+            priority = int(priority)
+            
+        
+        due_date = input(f"Due date {Fore.RED}(format: YYYY-MM-DD hh:mm:ss){Fore.RESET}: ")
+
+        if(due_date != "" and len(due_date.split(" ")) > 1):
+            date = due_date.split(" ")
+            if(len(date[0].split("-")) == 3 and len(date[1].split(":")) == 3):        
+                due_date = int(datetime.strptime(due_date, '%Y-%m-%d %H:%M:%S').timestamp())
+                due_date = bson.timestamp.Timestamp(due_date,1)
+            else:
+                due_date = None
+        else:
+            due_date = None
+                
+        # add to database
+        database = mongoConnection()
+        todos = database.get_collection('todo')
+        
+        added = todos.insert_one({
+            "title": title,
+            "description": description,
+            "priority": priority,
+            "completed": False,
+            "due_date": due_date
+        })
+        
+        if(added.inserted_id):
+            print(f"\n{Fore.GREEN}ToDo successfully added.{Fore.RESET}")
+        
         add_more = input("\nDo you want to add more todo? (Yes/Y): ")
         
         if(add_more.lower() == "yes" or add_more.lower() == "y"):
             continue
         else:
             break
-    
-    print(f"{Fore.GREEN}{title}{Fore.RESET}")
 
 
 @app.command()
 def showtodo():
     database = mongoConnection()
     
-    todos = database.get_collection('todo').find()
+    pipeline = [
+        {
+            "$set": {
+                "due_date": {
+                    "$ifNull": [
+                        { "$toDate": "$due_date" },
+                        None
+                    ]
+                }
+            }
+        },
+        {
+          "$match": {
+              "completed": False
+          }
+        },
+        {
+            "$project": {
+                "title": 1,
+                "description": 1,
+                "completed": 1,
+                "priority": {
+                    "$ifNull": ["$priority", None]
+                },
+                "due_date": 1,
+                    
+            }  
+        },
+        {
+            "$sort": {
+                "priority": -1
+            }
+        }
+    ] 
+    
+    todos = list(database.todo.aggregate(pipeline))
     
     header = [x.title().replace('_', " ").strip() for x in todos[0].keys()]
-    rows =  [x.values() for x in todos]
+    rows =  [x.values() for x in todos];
     
     print(tabulate(rows, header,tablefmt='orgtbl'))
     
