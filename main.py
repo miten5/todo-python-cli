@@ -1,3 +1,4 @@
+import bson.objectid
 import bson.timestamp
 import typer
 from datetime import datetime
@@ -112,12 +113,36 @@ def showtodo():
     
     print(tabulate(rows, header,tablefmt='orgtbl'))
     
+    update_todo = input("\nDo you want to mark todo as completed? (Y/N): ");
+    
+    if(update_todo.lower() == "yes" or update_todo.lower() == "y"):
+        _id = input("Please provide Id of todo to mark as completed: ")
+        
+        if(_id != ""):
+            updatetodo(_id, True)
+        
 @app.command()
 def updatetodo(id: str, completed: bool = False):
+    
+    database = mongoConnection()
+    
+    all_todo = database.todo.update_one({'_id': bson.ObjectId(id)}, {
+        "$set": {
+            "completed": completed
+        }
+    })
+    
+    print("\n successfully mark completed.")
+
     return 
 
 @app.command()
-def deleretodo(id: str):
+def deletetodo(id: str):
+    database = mongoConnection()
+    
+    all_todo = database.todo.delete_one({'_id': bson.ObjectId(id)})
+    
+    print("\nTodo successfully deleted.")
     return
 
 def mongoConnection():
